@@ -1,0 +1,252 @@
+function varargout = process_sc_sleep_spindet( varargin )
+% process_sc_sleep_spindet: Detect spindles in raw files. Returns raw files
+% with new events.
+%
+% Author: Jonathan Godbout, 2013
+
+macro_methodcall;
+end
+
+
+%% ===== GET DESCRIPTION =====
+function sProcess = GetDescription() %#ok<DEFNU>
+
+    evtList = {'REM','NREM1','WAKE'};
+
+    % Description the process
+    sProcess.Comment     = 'SLEEP > Spindles Detection (Godbout, 2013) (development)';
+    sProcess.FileTag     = '| spindet';
+    sProcess.Description = '<HTML>Detect sleep spindles in RAW data';
+    sProcess.Category    = 'custom';
+    sProcess.SubGroup    = 'CARSM';
+    sProcess.Index       = 72;
+    % Definition of the input accepted by this process
+    sProcess.InputTypes  = {'raw'};
+    sProcess.OutputTypes = {'raw'};
+    sProcess.nInputs     = 1;
+    sProcess.nMinFiles   = 1;
+    % Default values for some options
+    sProcess.isSourceAbsolute = -1;
+    sProcess.processDim  = 2;     % Process channel by channel
+    %
+    sProcess.options.h0State.Comment = 'Null hypothesis stage: ';
+    sProcess.options.h0State.Type    = 'combobox';
+    sProcess.options.h0State.Value   = {1,evtList};
+    %
+    sProcess.options.freqBand.Comment = 'Detection frequency band: ';
+    sProcess.options.freqBand.Type    = 'range';
+    sProcess.options.freqBand.Value   = {[10,16],'Hz',1};
+    %
+    sProcess.options.freqRes.Comment = 'Frequency resolution: ';
+    sProcess.options.freqRes.Type    = 'value';
+    sProcess.options.freqRes.Value   = {0.1,'Hz',3};
+    %
+    sProcess.options.pvalue.Comment = 'H0 rejection p-value: ';
+    sProcess.options.pvalue.Type    = 'value';
+    sProcess.options.pvalue.Value   = {0.06,'',3};
+    %
+    sProcess.options.interval.Comment = 'Merging interval: ';
+    sProcess.options.interval.Type    = 'value';
+    sProcess.options.interval.Value   = {1,'ms',0};
+    %
+    sProcess.options.duration.Comment = 'Time window around events for topography computation: ';
+    sProcess.options.duration.Type    = 'value';
+    sProcess.options.duration.Value   = {0.5,'ms',0};
+    %
+    sProcess.options.topoFreqBand.Comment = 'Frequency band for topography computation: ';
+    sProcess.options.topoFreqBand.Type    = 'range';
+    sProcess.options.topoFreqBand.Value   = {[10,16],'Hz',1};
+    %
+    sProcess.options.metric.Comment = 'Classification metric: ';
+    sProcess.options.metric.Type    = 'combobox';
+    sProcess.options.metric.Value   = {1,{'euclidean'}};
+    %
+    sProcess.options.method.Comment = 'Classification linkage method (see LINKAGE): ';
+    sProcess.options.method.Type    = 'combobox';
+    sProcess.options.method.Value   = {1,{'average','centroid','complete','median','single','ward','weighted'}};
+    %
+    sProcess.options.criterion.Comment = 'Classification criterion (see CLUSTER): ';
+    sProcess.options.criterion.Type    = 'combobox';
+    sProcess.options.criterion.Value   = {1,{'uniform','maxclust','inconsistent','distance'}};
+    %
+    sProcess.options.cutoff.Comment = 'Classification cut-off: ';
+    sProcess.options.cutoff.Type    = 'value';
+    sProcess.options.cutoff.Value   = {0.6,'',3};
+%     %
+%     sProcess.options.treecut.Comment = 'Classification tree cut value: ';
+%     sProcess.options.treecut.Type    = 'value';
+%     sProcess.options.treecut.Value   = {0.6,'',3};
+    %
+    sProcess.options.moment.Comment = 'Morse wavelet vanishing moments: ';
+    sProcess.options.moment.Type    = 'value';
+    sProcess.options.moment.Value   = {10,'',0};
+    %
+    sProcess.options.order.Comment = 'Morse wavelet order: ';
+    sProcess.options.order.Type    = 'value';
+    sProcess.options.order.Value   = {20,'',0};
+    %
+    sProcess.options.tasks.Comment = {'Do entire algorithm','Recompute threshold','Only reclassify'};
+    sProcess.options.tasks.Type    = 'radio';
+    sProcess.options.tasks.Value   = 1;
+end
+
+
+%% ===== FORMAT COMMENT =====
+function Comment = FormatComment(sProcess) %#ok<DEFNU>
+    Comment = sProcess.Comment;
+end
+
+
+%% ===== RUN =====
+function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
+    
+    bst_progress('start', 'Spindle Detection', 'Initiating');
+    
+    for iFile = 1:length(sInputs)
+
+        % ===== GET DATA =====
+        % Load the raw file descriptor
+        DataMat = in_bst_data(sInputs(iFile).FileName);
+        sFile = DataMat.F;
+        
+        % ===== DETECT SPINDLES =====
+        
+        % ------- Set sleep business -----
+        
+        f = open(syneeg.c_file, sFile.filename);
+        e = brainstorm.events.bst2syneeg(sFile.events,1);
+        e = methods.c_events.normalize.sleep(e);
+        e = e.get_events('type','sleep');
+        e = methods.c_events.sleep.add_feature_sleep_i(e);
+        e.root = f;
+        e.name = 'sleep';
+        e.description = 'scoring';
+        [~,idx] = f.get_event('name','sleep'); f.event(idx) = [];
+        f.event = [f.event,e];
+        
+        % ------- Apply methods -------
+        
+        if isfield(f.feature,'sds'), sds = f.feature.sds; end
+
+        if sProcess.options.tasks.Value == 1
+            % PARAMETERS
+            sds.montage.labels = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
+            sds.montage.weigth = [ 1,   1,   1,   1,   1,   1,   1,   1,   1  ];
+            sds.montage.name   = 'central';
+            sds.wavelet.moment = sProcess.options.moment.Value{1};
+            sds.wavelet.order  = sProcess.options.order.Value{1};
+            sds.event.freqBand = sProcess.options.freqBand.Value{1};
+            sds.event.freqRes  = sProcess.options.freqRes.Value{1};
+            sds.event.freqBin  = sds.event.freqBand(1):sds.event.freqRes:sds.event.freqBand(2);
+            % METHODS
+            f.feature.sds = sds;
+            bst_progress('text','Setting montage');
+            f = methods.c_file.spindle.detection.eeg.set(f);
+            f = methods.c_file.spindle.detection.montage.set(f);
+            bst_progress('text','Segmenting');
+            f = methods.c_file.spindle.detection.event.segment(f); 
+            % FINISH
+            f.save;
+            sds = f.feature.sds;
+        end
+
+        if sProcess.options.tasks.Value <= 2
+            % PARAMETERS
+            sds.candidate.threshold.h0.state = sProcess.options.h0State.Value{2}{sProcess.options.h0State.Value{1}};
+            sds.candidate.threshold.pvalue   = sProcess.options.pvalue.Value{1};
+            sds.candidate.feature.name       = {'amplitude','sigmacwt'}; % {'amplitude','sigmacwt'}
+            sds.merge.interval    	= sProcess.options.interval.Value{1}; % Seconds
+            sds.merge.feature      	= 'amplitude'; % Feature to consider for retained event
+            sds.topography.duration	= sProcess.options.duration.Value{1};
+            sds.topography.freqBand	= sProcess.options.topoFreqBand.Value{1};
+            % METHODS
+            f.feature.sds = sds;
+            bst_progress('text','Thresholding');
+            f = methods.c_file.spindle.detection.candidate.threshold.set(f);
+            f = methods.c_file.spindle.detection.candidate.threshold.apply(f);
+            f = methods.c_file.spindle.detection.candidate.merge(f);
+            bst_progress('text','Computing candidates topographies');
+            f = methods.c_file.spindle.detection.topography.compute(f);
+            % FINISH
+            f.save;
+            sds = f.feature.sds;
+        end
+
+        if sProcess.options.tasks.Value <= 3
+            % PARAMETERS
+            sds.hierarchy.feature.name = {'frequency'        , 'median'}; % 1
+            sds.hierarchy.feature.bin  = {sds.event.freqBin, -.375:.15:.375}; % 1
+            sds.hierarchy.metric       = sProcess.options.metric.Value{2}{sProcess.options.metric.Value{1}};  % 2
+            sds.hierarchy.method       = sProcess.options.method.Value{2}{sProcess.options.method.Value{1}};  % 2
+            sds.cluster.criterion      = sProcess.options.criterion.Value{2}{sProcess.options.criterion.Value{1}}; % 3
+            sds.cluster.cutoff         = sProcess.options.cutoff.Value{1}; % 3
+            % METHODS
+            f.feature.sds = sds;
+            bst_progress('text','Hierachical clustering');
+            f = methods.c_file.spindle.detection.hierarchy.set(f);      % 1
+            f = methods.c_file.spindle.detection.hierarchy.build(f);    % 2
+            f = methods.c_file.spindle.detection.hierarchy.cut(f);      % 3
+            % % % methods.c_file.spindle.detection.cluster.select(f); 
+            % FINISH
+            sds = f.feature.sds;
+        end
+                
+        sds.hierarchy.method
+
+        methods.c_file.spindle.detection.show.centroid(f);
+
+        figure; dendrogram(sds.hierarchy.linkage,1000);
+        
+
+        struct.structree(sds);
+
+        f.save;
+        
+        bst_progress('text','Terminating');
+        
+        % ===== CREATE EVENTS =====
+        e = f.get_event('description','central_candidate');
+        classnum = f.feature.sds.cluster.num;
+%         classnum = ones(size(classnum)); %%%%%%%%%%%%%%%%%%%%%%%
+        uClass = unique(classnum);
+        color = lines(length(uClass));
+        for iClass=1:numel(uClass)
+            ei = e.get_events(classnum==uClass(iClass));
+            % Basic events structure
+            sEvent = db_template('event');
+            sEvent.label   = ['detSpindles_' num2str(iClass)];
+            sEvent.color   = color(iClass,:);
+            sEvent.times   = ei.feature.position;
+            sEvent.samples = ei.feature.position_i;
+            sEvent.epochs  = ones(1, size(sEvent.times,2));
+            if ~isfield(sFile, 'events') || isempty(sFile.events)
+                sFile.events = sEvent;
+            else
+                sFile.events = [sFile.events, sEvent];
+            end
+        end
+        
+        % ===== SAVE RESULT =====
+        % Only save changes if something was detected
+        if ~isempty(sEvent)
+            % Update events structure
+            if ~isequal(DataMat.F, sFile)
+                DataMat.F = sFile;
+                % Keep only time window
+                DataMat.Time = DataMat.Time([1, end]);
+                % Save file definition
+                save(file_fullpath(sInputs(iFile).FileName), '-struct', 'DataMat');
+            end
+        else
+            bst_report('Warning', sProcess, sInputs(iFile), ['No event detected.']);
+        end
+    end
+    % Return all the input files
+    OutputFiles = {sInputs(iFile).FileName};
+            
+    bst_progress('stop');
+end
+
+
+
+

@@ -1,0 +1,150 @@
+function varargout = process_sc_stat_convert2tf( varargin )
+% process_sc_export_csv_connect_stat: Export connectivity statistics in CSV
+% file. We use 'import' inputtype since for now (oct-2013), you cannot
+% slide statistic data file in process tab. This is why you have to enter
+% the 'comment' of the file to compute (the name in the interface tree).
+%  
+% Authors: Jonathan Godbout, 2013
+
+macro_methodcall;
+end
+
+
+%% ===== GET DESCRIPTION =====
+function sProcess = GetDescription() %#ok<DEFNU>
+    % Description the process
+    sProcess.Comment     = 'EXPORT > CSV > Connectivity Statistics';
+    sProcess.FileTag     = '';
+    sProcess.Category    = 'Custom';
+    sProcess.SubGroup    = 'CARSM';
+    sProcess.Index       = 1765;
+    % Definition of the input accepted by this process
+    sProcess.InputTypes  = {'import'};
+    sProcess.OutputTypes = {'timefreq'};
+    sProcess.nInputs     = 1;
+    sProcess.nMinFiles   = 0;
+    sProcess.isSeparator = 1;
+    % 
+    sProcess.options.comment.Comment = 'Comment of inter-subject study to export:';
+    sProcess.options.comment.Type    = 'text';
+    sProcess.options.comment.Value   = [];
+    % File selection options
+    SelectOptions = {...
+        '', ...                            % Filename
+        '', ...                            % FileFormat
+        'save', ...                        % Dialog type: {open,save}
+        'Import BrainSuite folder...', ... % Window title
+        'ExportData', ...                  % LastUsedDir: {ImportData,ImportChannel,ImportAnat,ExportChannel,ExportData,ExportAnat,ExportProtocol,ExportImage,ExportScript}
+        'single', ...                      % Selection mode: {single,multiple}
+        'files', ...                        % Selection mode: {files,dirs,files_and_dirs}
+        {'.csv', 'CSV (*.csv)', 'CSV'}, ... % Available file formats
+        []};                          % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn}
+    % 
+    sProcess.options.csvfile.Comment = 'CSV Exported file name:';
+    sProcess.options.csvfile.Type    = 'filename';
+    sProcess.options.csvfile.Value   = SelectOptions;
+end
+
+
+%% ===== FORMAT COMMENT =====
+function Comment = FormatComment(sProcess) %#ok<DEFNU>
+    Comment = sProcess.Comment;
+end
+
+
+%% ===== RUN =====
+function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
+
+% Get inter-subject studies
+[sStudy, iStudy] = bst_get('AnalysisInterStudy');
+
+% Find the study to export, selected by the user using its 'comment'
+comment = sProcess.options.comment.Value;
+iMatch = find(strcmpi(comment,{sStudy.Stat.Comment}));
+if isempty(iMatch)
+    strMsg = sprintf('No inter-subject study has comment [%s]',comment);
+    bst_report('Error', sProcess, sInputs, strMsg);
+    OutputFiles = {};
+    return;
+elseif numel(iMatch)>1
+    strMsg = sprintf('Inter-subject study comment [%s] is not unique. Taking first study.',comment);
+    bst_report('Error', sProcess, sInputs, strMsg);
+    iMatch = iMatch(1);
+end
+sStat = sStudy.Stat(iMatch);
+
+% Make sure it is connectivity statistic data
+if isempty(strfind(sStat.FileName,'ptimefreq_'))||isempty(strfind(sStat.FileName,'connect'))
+    strMsg = 'Inter-subject study must be connectivity statistics';
+    bst_report('Error', sProcess, sInputs, strMsg);
+    OutputFiles = {};
+    return;
+end
+
+% Full name of CSV file to create
+csvfile = sProcess.options.csvfile.Value{1};
+
+% Get data struct
+sMat = in_bst_timefreq(sStat.FileName);
+
+% Generate cell table
+pmax = 1;
+[table, format] = ConnectivityStatTable(sMat,pmax);
+
+% Write CSV file
+WriteCSV(csvfile, table)
+
+% === EXIT ===
+OutputFiles = {sInputs.FileName}; % Return input file names
+
+end
+
+function OutputFiles = sc_bst_file_convert_stat2tf( sInputs )
+% sc_bst_file_convert_stat2tf: Converts "statistics" typed files to 
+% "timefrequency" typed files. Useful until Brainstorm support connectivity
+% statistics. The field TF contains statistics values (t-values or 
+% p-values). Newly created files are add in database in same study has
+% input files.
+%
+% Authors: Jonathan Godbout, 2013
+
+if ~strcmpi(unique({sInputs.FileType}),'ptimefreq')
+    error('All files must be timefrequency statistics files');
+end
+
+OutputFiles = cell(numel(sInputs),1);
+for iInput = 1:numel(sInputs)
+    
+    % Load statistics data
+    sStat = in_bst_timefreq(sInputs(iInput).FileName);
+    % Create time-frequency data from stat
+    sTF = db_template('timefreqmat');
+    for iField=intersect(fieldnames(sStat),fieldnames(sTF))'
+        sTF.(iField{1}) = sStat.(iField{1});
+    end
+    sTF.TF          = sStat.tmap;
+    sTF.DataType    = 'data';
+    sTF.Options.statconvert = sStat;
+%     sTF.Measure = 'other';
+    sTF.Method = 'cohere';  % Otherwise display bug
+    
+    isConnectn = ~isempty(sTF.RefRowNames);
+    if isConnectn,  FileType = 'timefreq_connectn';
+    else            FileType = 'timefreq';
+    end
+    
+    % ===== SAVE FILE =====
+    % Study
+    sStudy = bst_get('Study', sInputs(iInput).iStudy);
+    % Output filename
+    OutputFiles{iInput} = bst_process('GetNewFilename', bst_fileparts(sStudy.FileName), FileType);
+    % Save on disk
+    bst_save(OutputFiles{iInput}, sTF, 'v6');
+    % Register in database
+    db_add_data(sInputs(iInput).iStudy, OutputFiles{iInput}, sTF);
+end
+    
+% Update database interface
+db_reload_studies([sInputs.iStudy]);
+
+end

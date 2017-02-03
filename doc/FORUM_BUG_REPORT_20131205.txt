@@ -1,0 +1,36 @@
+Hi,
+
+I imported a raw file. I tried to import a set of events (some single, some extended) generated in another software (in a supported Brainamp *.vmrk format), but I obtain the following error:
+
+************
+Line 97: horzcat Dimensions of matrices being concatenated are not consistent.  
+_______________________________________________ 
+Call stack: 
+>process_evt_import.m>Run at 97 
+>macro_methodcall.m at 30 
+>process_evt_import.m at 24 
+>bst_process.m>Run at 128 
+>bst_process.m>CallProcess at 1447 
+>bst_call.m at 26 >macro_methodcall.m at 37 
+>bst_process.m at 30 
+>process_sc_evt_import_auto.m>Run at 104 
+>macro_methodcall.m at 30 >process_sc_evt_import_auto.m at 41 >bst_process.m>Run at 156 >bst_call.m at 26 >macro_methodcall.m at 37 >bst_process.m at 30 >panel_process1.m>RunProcess at 125 >bst_call.m at 28 >macro_methodcall.m at 39 >panel_process1.m at 27 >gui_brainstorm.m>CreateWindow/ProcessRun_Callback at 652 >bst_call.m at 28 >gui_brainstorm.m>@(h,ev)bst_call(@ProcessRun_Callback) at 267 
+_______________________________________________
+************
+
+The error points to this in process function <process_evt_import.m>:
+
+************
+% Report number of detected events
+bst_report('Info', sProcess, sInput, sprintf('Added to file: %d events in %d different categories', size([newEvents.times],2), length(newEvents)));
+************
+
+I figured out that the faulty expression was "[newEvents.times]"; since the imported events contain single (size(newEvents.times,1)==1) AND extended (size(newEvents.times,1)==2) events, the concatenation here is not valid. To make it worked, I changed "[newEvents.times]" with "[newEvents.epochs]" since (to my knowledge and understanding) "size(newEvents.epochs,1)==1" is always true.
+
+Hope this can help to fix this bug (if there really is a bug).
+
+Besides that, thanks for your wonderful software.
+
+Jonathan Godbout, M.Eng.
+Center for Advanced Research in Sleep Medicine (CARSM)
+Montreal, Qc, Canada

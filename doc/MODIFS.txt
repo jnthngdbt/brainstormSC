@@ -1,0 +1,138 @@
+***************************************************************************
+
+This file contains optional minor modifications to some buit-in Brainstorm 
+functions to adress specific "problems" (they are not really problems, just 
+specific minor features not there). 
+
+When updating Brainstorm (overwriting those modifications), you should go 
+and re-edit those functions. It really is maybe 1 or 2 lines added or 
+modified. I put some code around to locate it in file. I identified 
+modifications with something like %%%%%%%. 
+
+The reason why the modified function is not just added to the "custom" 
+folder, is that those functions are often big core Brainstorm functions 
+actively updated, so we dont want to freeze their evolution
+***************************************************************************
+
+
+-------------------------------
+I want to import Brainproducts with extension .dat instead of .eeg. In function <bst_get><FileFilters>, around line 2457:
+
+           case 'raw'
+                argout1 = {...
+                     {'.*'},                 'MEG/EEG: 4D-Neuroimaging/BTi (*.*)',   '4D'; ...
+                     {'.meg4','.res4'},      'MEG/EEG: CTF (*.ds;*.meg4;*.res4)',    'CTF' ; ... 
+                     {'.lena','.header'},    'MEG/EEG: LENA (*.lena)',               'LENA'; ...
+                     {'.fif'},               'MEG/EEG: Neuromag FIFF (*.fif)',       'FIF'; ...
+                     {'.mrk','.sqd','.con','.raw','.ave'},  'MEG/EEG: Yokogawa/KIT (*.sqd;*.con;*.raw;*.ave;*.mrk)', 'KIT'; ...
+                     {'.cnt'},               'EEG: ANT EEProbe (*.cnt)',             'EEG-ANT-CNT'; ...
+                     {'.bdf'},               'EEG: BDF (*.bdf)',                     'EEG-BDF'; ...
+                     {'.eeg','.dat'},               'EEG: BrainVision BrainAmp (*.eeg)',    'EEG-BRAINAMP'; ... %%%%%%%%%%%JG Added .dat as other BP extension
+                     {'.edf','.rec'},        'EEG: EDF / EDF+ (*.rec;*.edf)',        'EEG-EDF'; ...
+                     {'.set'},               'EEG: EEGLAB (*.set)',                  'EEG-EEGLAB'; ...
+                     {'.raw'},               'EEG: EGI Netstation RAW (*.raw)',      'EEG-EGI-RAW'; ...
+                     {'.mb2'},               'EEG: MANSCAN (*.mb2)',                 'EEG-MANSCAN'; ...
+                     {'.cnt','.avg','.eeg'}, 'EEG: Neuroscan (*.cnt;*.eeg;*.avg)',   'EEG-NEUROSCAN'; ...
+                     {'.mat'},               'NIRS: MFIP (*.mat)',                   'NIRS-MFIP'; ...
+                    };
+
+
+
+
+
+------------------------------------------------------------------------
+figure_connect.m, around line 1310 (LoadFigurePlot). We create selections for connectivity visualization (open raw data, right-click, edit selections). Should have a *EEG1010.sel file in BrainstormSC/library/custom/jgodbout/selections. 
+
+
+            %% ===== CHANNEL =====
+            % Get selections
+            sSelect = bst_selections('GetSelectionsForFigure', hFig);
+            % Check if all the rows to display are in the selections (if not: ignore selections)
+            if ~isempty(sSelect)
+                AllRows = cat(2, sSelect.Channels);
+                if ~all(ismember(RowNames, AllRows))
+                    sSelect = [];
+                    disp('Oops select');
+                end
+            end
+            % Use selections
+            if ~isempty(sSelect)
+                for iSel = 1:length(sSelect)
+                    groupRows = intersect(RowNames, sSelect(iSel).Channels);
+                    if ~isempty(groupRows)
+                        % Detect region based on name
+                        Name = upper(sSelect(iSel).Name);
+                        Region = [];
+                        switch Name
+                            case {'CTF LF'}
+                                Region = 'LF';
+                            case {'CTF LT'}
+                                Region = 'LT';
+                            case {'CTF LP'}
+                                Region = 'LP';
+                            case {'CTF LC'}
+                                Region = 'LC';
+                            case {'CTF LO'}
+                                Region = 'LO';
+                            case {'CTF RF'}
+                                Region = 'RF';
+                            case {'CTF RT'}
+                                Region = 'RT';
+                            case {'CTF RP'}
+                                Region = 'RP';
+                            case {'CTF RC'}
+                                Region = 'RC';
+                            case {'CTF RO'}
+                                Region = 'RO';
+                            case {'CTF ZC'}
+                                Region = 'UU';
+                            case {'LEFT-TEMPORAL'}
+                                Region = 'LT';
+                            case {'RIGHT-TEMPORAL'}
+                                Region = 'RT';
+                            case {'LEFT-PARIETAL'}
+                                Region = 'LP';
+                            case {'RIGHT-PARIETAL'}
+                                Region = 'RP';
+                            case {'LEFT-OCCIPITAL'}
+                                Region = 'LO';
+                            case {'RIGHT-OCCIPITAL'}
+                                Region = 'RO';
+                            case {'LEFT-FRONTAL'}
+                                Region = 'LF';
+                            case {'RIGHT-FRONTAL'}
+                                Region = 'RF';
+                            case {'EEG1010-LF'} %%%%%%%
+                                Region = 'LF';
+                            case {'EEG1010-LT'} %%%%%%%
+                                Region = 'LT';
+                            case {'EEG1010-LC'} %%%%%%%
+                                Region = 'LC';
+                            case {'EEG1010-LP'} %%%%%%%
+                                Region = 'LP';
+                            case {'EEG1010-LO'} %%%%%%%
+                                Region = 'LO';
+                            case {'EEG1010-RF'} %%%%%%%
+                                Region = 'RF';
+                            case {'EEG1010-RT'} %%%%%%%
+                                Region = 'RT';
+                            case {'EEG1010-RC'} %%%%%%%
+                                Region = 'RC';
+                            case {'EEG1010-RP'} %%%%%%%
+                                Region = 'RP';
+                            case {'EEG1010-RO'} %%%%%%%
+                                Region = 'RO';
+                            case {'EEG1010-UF'} %%%%%%%
+                                Region = 'UF';
+                        end
+
+
+
+
+-------------------------------------------------------------
+TO INCREASE THE CHANNEL LABELS IN CONNECTIVITY PLOT
+figure_connect.m, around line 3606
+
+        % Note: 1/20 is an arbitrarily defined ratio 
+        %       to compensate for the high font resolution
+        FontScalingRatio = 1 / 15; %%%%%%%%%
